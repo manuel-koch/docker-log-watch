@@ -2,19 +2,83 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
-	"os"
-	"os/signal"
-	"strconv"
-	"syscall"
-	"time"
-
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/fatih/color"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
 )
 
+var (
+	// these vars will be set on build time
+	versionTag  string
+	versionSha1 string
+	buildDate   string
+)
+
+func isSameOrChildPath(base string, other string) bool {
+	if base == other {
+		return true
+	}
+	if strings.HasPrefix(other, base+"/") {
+		return true
+	}
+	return false
+}
+
+func isDockerComposeDir(dir string) bool {
+	cmd := exec.Command("docker-compose", "config")
+	cmd.Dir = dir
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
+}
+
 func main() {
+	var printHelp bool
+	var printVersion bool
+	var allContainer bool
+	execName := filepath.Base(os.Args[0])
+	flag.BoolVar(&printHelp, "help", false, "Print help")
+	flag.BoolVar(&printVersion, "version", false, "Print version")
+	flag.BoolVar(&allContainer, "all", false, "Follow logs of any container, not just of current docker compose project")
+	flag.Parse()
+	if printHelp {
+		fmt.Printf("Usage: %s [-all]\n", execName)
+		flag.PrintDefaults()
+		os.Exit(0)
+	}
+	if printVersion {
+		fmt.Printf("%s built %s, version %s (%s)\n", execName, buildDate, versionTag, versionSha1)
+		os.Exit(0)
+	}
+
+	baseDir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	onlyComposeContainer := true
+	if isDockerComposeDir(baseDir) {
+		onlyComposeContainer = true
+	}
+	if allContainer {
+		onlyComposeContainer = false
+	}
+	if onlyComposeContainer {
+		bold := color.New(color.Bold)
+		bold.Printf("Only following containers of current docker-compose project...\n")
+	}
+
 	sigs := make(chan os.Signal, 1)
 	newContainers := make(chan ContainerInfo, 1)
 	done := make(chan bool, 1)
@@ -59,6 +123,10 @@ func main() {
 		for event := range events {
 			//fmt.Printf("%s %s %s\n", event.Type, event.Status, event.Action)
 			if event.Type == "container" && event.Action == "start" {
+				compose_project_dir := event.Actor.Attributes["com.docker.compose.project.working_dir"]
+				if onlyComposeContainer && (len(compose_project_dir) == 0 || !isSameOrChildPath(baseDir, compose_project_dir)) {
+					continue
+				}
 				container_number := 1
 				if i, err := strconv.Atoi(event.Actor.Attributes["com.docker.compose.container-number"]); err == nil {
 					container_number = i
@@ -107,6 +175,10 @@ func main() {
 	}
 	for i := range containers {
 		container := containers[i]
+		compose_project_dir := container.Labels["com.docker.compose.project.working_dir"]
+		if onlyComposeContainer && (len(compose_project_dir) == 0 || !isSameOrChildPath(baseDir, compose_project_dir)) {
+			continue
+		}
 		container_number := 1
 		if i, err := strconv.Atoi(container.Labels["com.docker.compose.container-number"]); err == nil {
 			container_number = i

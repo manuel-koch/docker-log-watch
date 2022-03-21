@@ -3,4 +3,4 @@
 *.iml
 
 # built executable
-docker-log-watch
+build/
