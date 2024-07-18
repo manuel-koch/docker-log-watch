@@ -140,7 +140,12 @@ func readln(r *bufio.Reader) (string, error) {
 	)
 	for isPrefix && err == nil {
 		line, isPrefix, err = r.ReadLine()
-		ln = append(ln, line...)
+		if err == nil && len(line) > 8 {
+			// First 8 bytes of every line contain additional docker API information for the stream.
+			// See https://docs.docker.com/engine/api/v1.26/#tag/Container/operation/ContainerAttach
+			// We just skip it here.
+			ln = append(ln, line[8:]...)
+		}
 	}
 	return string(ln), err
 }
