@@ -108,17 +108,39 @@ func (w *WatchingContainers) getNextColor() string {
 
 // read container logs line by line and output with colorized prefix
 func (w *WatchingContainers) watchOutput(container *ContainerInfo, out io.Reader) {
-	scanner := bufio.NewScanner(NewDockerLogFilter(out))
-	const maxCapacity = 1024 * 256
-	buf := make([]byte, maxCapacity)
-	scanner.Buffer(buf, maxCapacity)
+	bufferedReader := bufio.NewReader(out)
 	if prefixColor, prefixColorValid := w.prefixColors[container.LogPrefixColor]; prefixColorValid {
 		prefixColorized := prefixColor.SprintFunc()
-		for scanner.Scan() {
+		var (
+			err  error = nil
+			line string
+		)
+		for err == nil {
+			line, err = readln(bufferedReader)
 			prefix := fmt.Sprintf("%-*s:", w.LogPrefixLen, container.LogPrefix)
-			fmt.Printf("%s %s\n", prefixColorized(prefix), scanner.Text())
+			fmt.Printf("%s %s\n", prefixColorized(prefix), line)
+		}
+		if err != nil && err != io.EOF {
+			fmt.Printf("Error while reading output: %s: %s\n", container.LogPrefix, err)
 		}
 	} else {
 		panic(fmt.Sprintf("Unknown prefix color '%s'", container.LogPrefixColor))
 	}
+}
+
+// readln returns a single line (without the ending \n)
+// from the input buffered reader.
+// An error is returned if there is an error with the
+// buffered reader.
+func readln(r *bufio.Reader) (string, error) {
+	var (
+		isPrefix bool  = true
+		err      error = nil
+		line, ln []byte
+	)
+	for isPrefix && err == nil {
+		line, isPrefix, err = r.ReadLine()
+		ln = append(ln, line...)
+	}
+	return string(ln), err
 }
