@@ -4,9 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/client"
-	"github.com/fatih/color"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -15,6 +12,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	api_container "github.com/docker/docker/api/types/container"
+	api_events "github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/client"
+	"github.com/fatih/color"
 )
 
 var (
@@ -117,7 +119,7 @@ func main() {
 	}()
 
 	// listen to docker events related to starting containers
-	eventOptions := types.EventsOptions{}
+	eventOptions := api_events.ListOptions{}
 	events, _ := cli.Events(ctx, eventOptions)
 	go func() {
 		for event := range events {
@@ -151,7 +153,7 @@ func main() {
 			watchingContainers.addContainer(&container)
 			bold.Printf("Following container %s...\n", container.LogPrefix)
 			go func(container *ContainerInfo) {
-				options := types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Follow: true, Tail: "0"}
+				options := api_container.LogsOptions{ShowStdout: true, ShowStderr: true, Follow: true, Tail: "0"}
 				out, err := cli.ContainerLogs(ctx, container.ID, options)
 				if err != nil {
 					panic(err)
@@ -168,7 +170,7 @@ func main() {
 	}()
 
 	// get currently running containers too
-	listOptions := types.ContainerListOptions{}
+	listOptions := api_container.ListOptions{}
 	containers, err := cli.ContainerList(ctx, listOptions)
 	if err != nil {
 		panic(err)
